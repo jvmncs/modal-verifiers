@@ -10,15 +10,19 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python verifiers/inference/vllm_serve.py --model 'Q
 
 CUDA_VISIBLE_DEVICES=4,5,6,7 accelerate launch --config-file configs/zero3.yaml verifiers/examples/math_train.py
 """
+
 import os
 import subprocess
 
 import modal
 
-app = modal.App("verifiers-math-training", secrets=[
-    modal.Secret.from_name("huggingface-secret"),
-    modal.Secret.from_name("wandb-secret"),
-])
+app = modal.App(
+    "verifiers-math-training",
+    secrets=[
+        modal.Secret.from_name("huggingface-secret"),
+        modal.Secret.from_name("wandb-secret"),
+    ],
+)
 
 cuda_version = "12.8.1"  # should be no greater than host CUDA version
 flavor = "devel"  #  includes full CUDA toolkit
@@ -26,43 +30,69 @@ operating_sys = "ubuntu22.04"
 tag = f"{cuda_version}-{flavor}-{operating_sys}"
 
 image = (
-    modal.Image.from_registry(f"nvidia/cuda:{tag}", add_python="3.12")
+    modal.Image.from_registry(f"nvidia/cuda:{tag}", add_python="3.11")
     .pip_install("uv")
     .run_commands("uv pip install --system wheel")
     .run_commands("apt-get -y update && apt-get -y install git")
-    # .add_local_dir("../verifiers", "/verifiers_src", copy=True)
-    # .run_commands("uv pip install --system /verifiers_src", gpu="H100")
-    .run_commands("uv pip install --system git+https://github.com/jvmncs/verifiers.git", gpu="H100")
-    .run_commands("uv pip install --system --no-build-isolation flash-attn", gpu="H100")
+    # pinning this because of a change in transformers.Trainer that broke the old verifiers.GRPOEnvTrainer
+    .run_commands("uv pip install --system transformers==4.51.3")
+    .run_commands(
+        "uv pip install --system git+https://github.com/jvmncs/verifiers.git",
+        gpu="H100",
+    )
+    .run_commands(
+        "uv pip install --system --no-build-isolation flash-attn==2.7.4.post1",
+        gpu="H100",
+    )
 )
+hf_cache = modal.Volume.from_name("hf-cache", create_if_missing=True)
+vllm_cache = modal.Volume.from_name("vllm-cache", create_if_missing=True)
+
 MINUTES = 60
 HOURS = 60 * MINUTES
+
+
 @app.function(
     image=image,
     gpu="H100:8",
     scaledown_window=None,
-    timeout=2 * HOURS
+    timeout=2 * HOURS,
+    volumes={"/root/.cache/huggingface": hf_cache, "/root/.cache/vllm": vllm_cache},
 )
 def main():
     procs = []
     jobs = [
         (
             [
-                "python", "-m", "verifiers.inference.vllm_serve",
-                "--model", "Qwen/Qwen2.5-7B-Instruct",
-                "--tensor_parallel_size", "4",
-                "--max_model_len", "8192",
-                "--dtype", "bfloat16",
-                "--gpu_memory_utilization", "0.9",
-                "--enable_prefix_caching", "True",
-                "--host", "0.0.0.0",
-                "--port", "8000",
+                "python",
+                "-m",
+                "verifiers.inference.vllm_serve",
+                "--model",
+                "Qwen/Qwen2.5-7B-Instruct",
+                "--tensor_parallel_size",
+                "4",
+                "--max_model_len",
+                "8192",
+                "--dtype",
+                "bfloat16",
+                "--gpu_memory_utilization",
+                "0.9",
+                "--enable_prefix_caching",
+                "True",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8000",
             ],
             {"CUDA_VISIBLE_DEVICES": "0,1,2,3"},
         ),
         (
             [
-                "accelerate", "launch", "--config-file", "trainer/zero3.yaml", "trainer/math_train.py"
+                "accelerate",
+                "launch",
+                "--config-file",
+                "trainer/zero3.yaml",
+                "trainer/math_train.py",
             ],
             {"CUDA_VISIBLE_DEVICES": "4,5,6,7"},
         ),

@@ -51,7 +51,6 @@ Example for math problems:
 """
 
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-name", type=str, default="Qwen/Qwen2.5-7B-Instruct")
@@ -69,7 +68,7 @@ if __name__ == "__main__":
         system_prompt=TOOL_PROMPT,
         few_shot=[],
         tools=[python],
-        max_steps=5
+        max_steps=5,
     )
     print(vf_env.system_prompt)
 
@@ -77,7 +76,7 @@ if __name__ == "__main__":
     model, tokenizer = vf.get_model_and_tokenizer(model_name)
     run_name = "math-grpo_" + model_name.split("/")[-1].lower()
 
-    training_args=GRPOConfig(
+    training_args = GRPOConfig(
         output_dir=f"outputs/{run_name}",
         run_name=run_name,
         learning_rate=1e-6,
@@ -105,22 +104,24 @@ if __name__ == "__main__":
         save_steps=100,
         save_only_model=True,
         use_vllm=True,
-        vllm_server_host="0.0.0.0", # replace with your inference server's host for multi-node setups
+        vllm_server_host="0.0.0.0",  # replace with your inference server's host for multi-node setups
         vllm_server_port=8000,
         vllm_gpu_memory_utilization=0.9,
         logging_steps=1,
         log_on_each_node=False,
         log_completions=True,
         report_to="wandb",
-        reward_weights=vf_env.get_reward_weights()
+        reward_weights=vf_env.get_reward_weights(),
     )
+    train_ds = vf_env.get_dataset()
+    eval_ds = vf_env.get_eval_dataset()
     trainer = vf.GRPOEnvTrainer(
         model=model,
         processing_class=tokenizer,
         reward_funcs=vf_env.get_reward_funcs(),
         env=vf_env,
         args=training_args,
-        train_dataset=vf_env.get_dataset(),
-        eval_dataset=vf_env.get_eval_dataset()
+        train_dataset=train_ds,
+        eval_dataset=eval_ds,
     )
     trainer.train()
