@@ -1,0 +1,10 @@
+[project]
+name = "modal-verifiers"
+authors = [
+    { name = "Jason Mancuso", email = "7891333+jvmncs@users.noreply.github.com" },
+]
+version = "0.1.0"
+description = "Verifier-led RL for LLMs, but serverless"
+license = { text = "MIT" }
+requires-python = ">=3.12,<3.13"
+dependencies = ["modal"]
